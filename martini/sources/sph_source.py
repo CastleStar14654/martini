@@ -371,7 +371,7 @@ class SPHSource(object):
 
         self.current_rotation = do_rot.dot(self.current_rotation)
         self.coordinates_g = self.coordinates_g.transform(do_rot)
-        return
+        return do_rot
 
     def translate(self, translation_vector):
         """
