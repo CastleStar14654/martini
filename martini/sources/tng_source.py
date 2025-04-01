@@ -228,7 +228,7 @@ class TNGSource(SPHSource):
                     f"martini-cutout-grnr-{simulation}-{snapNum}-{subID}.npy",
                 )
                 if os.path.exists(grnr_file):
-                    haloID = np.load(grnr_file)
+                    haloID, n_gas = np.load(grnr_file)
                     have_cutout = True
                 else:
                     have_cutout = False
@@ -249,8 +249,8 @@ class TNGSource(SPHSource):
                 print("No local cutout found, cutout will be downloaded.")
                 sub_api_path = f"{simulation}/snapshots/{snapNum}/subhalos/{subID}"
                 sub = api_get(sub_api_path, api_key=api_key)
-                haloID = sub["grnr"]
-                np.save(grnr_file, haloID)
+                haloID, n_gas = sub["grnr"], sub["len_gas"]
+                np.save(grnr_file, (haloID, n_gas))
                 data_sub["SubhaloPos"] = np.array([sub[f"pos_{ax}"] for ax in "xyz"])
                 data_sub["SubhaloVel"] = np.array([sub[f"vel_{ax}"] for ax in "xyz"])
                 cutout_api_path = (
@@ -414,4 +414,6 @@ class TNGSource(SPHSource):
             vxyz_g=vxyz_g,
             hsm_g=hsm_g,
         )
+
+        self.subhaloMHI = np.sum(mHI_g[:n_gas]) << U.Msun
         return
