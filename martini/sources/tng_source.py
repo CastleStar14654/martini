@@ -373,7 +373,7 @@ class TNGSource(SPHSource):
         )
         m_g = data_g["Masses"] * 1e10 / h * U.Msun
         # cast to float64 to avoid underflow error
-        nH_g = U.Quantity(rho_g * X_H_g / mu_g, dtype=np.float64) / C.m_p
+        nH_g = U.Quantity(rho_g * X_H_g, dtype=np.float64) / C.m_p
         # In TNG_corrections I set f_neutral = 1 for particles with density
         # > .1cm^-3. Might be possible to do a bit better here, but HI & H2
         # tables for TNG will be available soon anyway.
