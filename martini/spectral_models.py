@@ -52,9 +52,16 @@ class _BaseSpectrum(metaclass=ABCMeta):
         self.spec_dtype = spec_dtype
         return
 
+    def vmid2idx(self, vmid):
+        return np.round(((vmid - self.vmid_reference) / self.vmid_binwidth
+                        << 1).value).astype(np.int32)
+
+    def idx2vmid(self, idx):
+        return self.vmid_reference + self.vmid_binwidth * (idx+0.5)
+
     def init_spectra(self, source, datacube):
         """
-        Pre-compute the spectrum of each particle.
+        Pre-compute the spectrum at a bins of middle velocities.
 
         The spectral model defined in
         :meth:`~martini.spectral_models._BaseSpectrum.spectral_function` is evaluated
@@ -80,45 +87,34 @@ class _BaseSpectrum(metaclass=ABCMeta):
         """
 
         self.channel_edges = datacube.velocity_channel_edges
-        channel_widths = np.abs(np.diff(self.channel_edges).to(U.km * U.s**-1))
-        self.vmids = source.skycoords.radial_velocity
-        A = source.mHI_g * np.power(source.skycoords.distance.to(U.Mpc), -2)
+        channel_widths = np.abs(np.diff(self.channel_edges).to(U.km * U.s**-1)).astype(self.spec_dtype)
+        self.full_vmids = source.skycoords.radial_velocity << U.km * U.s**-1
+
+        vmids_lim = np.min(self.full_vmids), np.max(self.full_vmids)
+        channel_width = channel_widths[0]
+        self.vmid_binwidth = 0.1 * channel_width
+        _num = int((vmids_lim[1] - vmids_lim[0]) / self.vmid_binwidth) + 3
+        _idx0 = np.floor((vmids_lim[0] - self.channel_edges[0])
+                         / self.vmid_binwidth << 1)
+        self.vmid_reference = self.channel_edges[0] + self.vmid_binwidth * _idx0
+        self.vmids = self.vmid_reference + self.vmid_binwidth * np.arange(_num)
+        assert (self.vmids[0] << U.km * U.s**-1) < vmids_lim[0]
+        assert (self.vmids[-1] << U.km * U.s**-1) > vmids_lim[-1]
+        self.full_vmids_idx = self.vmid2idx(self.full_vmids)
+        assert np.all(self.full_vmids_idx >= 0)
+        assert np.all(self.full_vmids_idx < _num)
+
+        A = source.mHI_g.unit * U.Mpc**-2
         MHI_Jy = (
             U.Msun * U.Mpc**-2 * (U.km * U.s**-1) ** -1,
             U.Jy,
             lambda x: (1 / 2.36e5) * x,
             lambda x: 2.36e5 * x,
         )
-        if self.ncpu == 1:
-            raw_spectra = self.evaluate_spectra(source, datacube)
-        else:
-            from multiprocess.pool import Pool
-
-            with Pool(processes=self.ncpu) as pool:
-                raw_spectra = np.vstack(
-                    pool.map(
-                        lambda mask: self.evaluate_spectra(source, datacube, mask=mask),
-                        [
-                            (
-                                np.s_[
-                                    icpu
-                                    * len(self.vmids)
-                                    // self.ncpu : (icpu + 1)
-                                    * len(self.vmids)
-                                    // self.ncpu
-                                ]
-                                if icpu is not None
-                                else np.s_[...]
-                            )
-                            for icpu in range(self.ncpu)
-                        ],
-                    )
-                )
-        self.spectra = (
-            A.astype(self.spec_dtype)[..., np.newaxis]
-            * raw_spectra
-            / channel_widths.astype(self.spec_dtype)
-        ).to(U.Jy, equivalencies=[MHI_Jy])
+        raw_spectra = self.evaluate_spectra(source, datacube)
+        raw_spectra *= self.spec_dtype(1.) / channel_widths
+        raw_spectra *= A
+        self.spectra = raw_spectra.to(U.Jy, equivalencies=[MHI_Jy])
 
         return
 
@@ -155,33 +151,12 @@ class _BaseSpectrum(metaclass=ABCMeta):
             upper_edges_slice = np.s_[:-1]
         else:
             raise ValueError("Channel edges are not monotonic sequence.")
+        newshape = (1,) * len(vmids.shape) + (-1,)
         return self.spectral_function(
-            (
-                np.tile(
-                    self.channel_edges.to_value(self.channel_edges.unit)[
-                        lower_edges_slice
-                    ],
-                    vmids.shape + (1,),
-                )
-                * self.channel_edges.unit
-            ).astype(self.spec_dtype),
-            (
-                np.tile(
-                    self.channel_edges.to_value(self.channel_edges.unit)[
-                        upper_edges_slice
-                    ],
-                    vmids.shape + (1,),
-                )
-                * self.channel_edges.unit
-            ).astype(self.spec_dtype),
-            (
-                np.tile(
-                    vmids.to_value(vmids.unit),
-                    np.shape(self.channel_edges[:-1]) + (1,) * vmids.ndim,
-                ).T
-                * vmids.unit
-            ).astype(self.spec_dtype),
-        ).to_value(U.dimensionless_unscaled)
+            self.channel_edges[lower_edges_slice].reshape(newshape),
+            self.channel_edges[upper_edges_slice].reshape(newshape),
+            vmids.reshape(vmids.shape + (1,))
+        ) << U.dimensionless_unscaled
 
     @abstractmethod
     def half_width(self, source):
@@ -254,16 +229,12 @@ class _BaseSpectrum(metaclass=ABCMeta):
         """
         if self.spectral_function_extra_data is None:
             self.spectral_function_extra_data = dict()
-        self.spectral_function_extra_data = {
-            k: np.tile(
-                v[mask] if not v.isscalar else v,
-                np.shape(datacube.channel_edges[:-1])
-                + (1,) * source.skycoords.radial_velocity.ndim,
-            )
-            .astype(self.spec_dtype)
-            .T
-            for k, v in self.spectral_function_extra_data.items()
-        }
+        for k, v in self.spectral_function_extra_data.items():
+            if not v.isscalar:
+                _ = v[mask]
+                self.spectral_function_extra_data[k] = _.reshape(
+                    (1,) * (len(datacube.channel_edges) - 1) + (-1,)
+                )
         return
 
 
@@ -332,10 +303,11 @@ class GaussianSpectrum(_BaseSpectrum):
 
         assert self.spectral_function_extra_data is not None
         sigma = self.spectral_function_extra_data["sigma"]
-
+        _ = 1. / (np.sqrt(self.spec_dtype(2.0)) * sigma)
+        _vmids = (_ * vmids << 1).value
         return self.spec_dtype(0.5) * (
-            erf((b - vmids) / (np.sqrt(self.spec_dtype(2.0)) * sigma))
-            - erf((a - vmids) / (np.sqrt(self.spec_dtype(2.0)) * sigma))
+            erf((_ * b << 1).value - _vmids, dtype=self.spec_dtype)
+            - erf((_ * a << 1).value - _vmids, dtype=self.spec_dtype)
         )
 
     def init_spectral_function_extra_data(self, source, datacube, mask=np.s_[...]):

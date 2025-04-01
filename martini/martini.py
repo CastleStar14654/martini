@@ -225,14 +225,13 @@ class _BaseMartini:
 
         Returns
         -------
-        out : list
-            A list containing 2-tuples. Each 2-tuple contains and "insertion slice" that
+        out : generator
+            A generator producing 2-tuples. Each 2-tuple contains and "insertion slice" that
             is an index into the datacube._array instance held by this martini instance
             where the pixel spectrum is to be placed, and a 1D array containing the
             spectrum, whose length must match the length of the spectral axis of the
             datacube.
         """
-        result = list()
         rank, ij_pxs = ranks_and_ij_pxs
         if progressbar:
             ij_pxs = tqdm.tqdm(ij_pxs, position=rank)
@@ -244,20 +243,22 @@ class _BaseMartini:
             weights = self.sph_kernel._px_weight(
                 self.source.pixcoords[:2, mask] - ij, mask=mask
             )
+            mHIs = self.source.mHI_g.value[mask]
+            distances = self.source.skycoords.distance[mask].to(U.Mpc).value
             insertion_slice = (
                 np.s_[ij_px[0], ij_px[1], :, 0]
                 if self._datacube.stokes_axis
                 else np.s_[ij_px[0], ij_px[1], :]
             )
-            result.append(
-                (
+            vmids_idx = self.spectral_model.full_vmids_idx[mask]
+            res = 0
+            fac = weights * mHIs * distances**-2
+            for _f, _v in zip(fac, vmids_idx):
+                res += _f * self.spectral_model.spectra[_v]
+            yield (
                     insertion_slice,
-                    (self.spectral_model.spectra[mask] * weights[..., np.newaxis]).sum(
-                        axis=-2
-                    ),
+                    res,
                 )
-            )
-        return result
 
     def _insert_pixel(self, insertion_slice, insertion_data):
         """
