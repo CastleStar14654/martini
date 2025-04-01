@@ -534,7 +534,7 @@ class SPHSource(object):
             if (self.hsm_g.isscalar or mask.size <= 1)
             else (self.hsm_g[mask].to_value(U.kpc) / lim)
         )
-        size = 300 * size_scale if point_scaling == "auto" else 10
+        size = (3*72 * size_scale)**2 if point_scaling == "auto" else 10
         fig = plt.figure(fig, figsize=(12, 4))
         fig.clf()
         fig.suptitle(title)
