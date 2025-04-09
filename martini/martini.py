@@ -999,7 +999,8 @@ class Martini(_BaseMartini):
             )
         self._datacube.drop_pad()
 
-        filename = filename if filename[-5:] == ".fits" else filename + ".fits"
+        if 'fits' not in str(filename).split('.'):
+            filename = str(filename) + ".fits"
 
         wcs_header = self._datacube.wcs.to_header()
         wcs_header.rename_keyword("WCSAXES", "NAXIS")
@@ -1069,7 +1070,7 @@ class Martini(_BaseMartini):
 
         # flip axes to write
         hdu = fits.PrimaryHDU(
-            header=header, data=self._datacube._array.to_value(datacube_array_units).T
+            header=header, data=self._datacube._array.to_value(datacube_array_units).T.astype(np.float32)
         )
         hdu.writeto(filename, overwrite=overwrite)
 
