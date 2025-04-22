@@ -207,15 +207,24 @@ class AurigaSource(SPHSource):
         rho_g = snapobj.data["Density"] << (1e10 / h * U.Msun * np.power(a / h * U.Mpc, -3))
         u_g = snapobj.data["InternalEnergy"] << (U.km/U.s)**2
         m_g = snapobj.data["Masses"] << (1e10 / h * U.Msun)
-
+        # cast to float64 to avoid underflow error
+        nH_g = rho_g * X_H_g / C.m_p << U.cm**-3
         fneutral_g = snapobj.data["NeutralHydrogenAbundance"].copy()
         gamma = 5.0 / 3.0
-        mu_h = 4 / (3 + 5 * X_H_g) << C.m_p # He fully ionized
-        u_h = C.k_B * (1e7<<U.K) / (mu_h * (gamma - 1.)) << (U.km/U.s)**2
-        del mu_h
+        # cold
         mu_c = 4 / (1 + 3 * X_H_g) << C.m_p
         u_c = C.k_B * (1e3<<U.K) / (mu_c * (gamma - 1.)) << (U.km/U.s)**2
         del mu_c
+        # hot
+        mu_h = 4 / (3 + 5 * X_H_g) << C.m_p # He fully ionized
+        T_h = (1e3
+               + 5.73e7 / (1 +
+                           573*np.maximum(1.,
+                                          nH_g.to_value(U.cm**-3)/0.13
+                                          )**-0.8)
+               ) << U.K # SH03; Stevens 19
+        u_h = C.k_B * T_h / (mu_h * (gamma - 1.)) << (U.km/U.s)**2
+        del mu_h
         sfr_g = snapobj.data["StarFormationRate"] << U.Msun / U.yr
         possfr_mask = sfr_g > 0
         u_h_pos = u_h[possfr_mask]
