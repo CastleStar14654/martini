@@ -203,9 +203,10 @@ class AurigaSource(SPHSource):
         snapobj = ap.util.apply_mask(snapobj, radialcut=(aperture << a / h * U.Mpc).value)
 
         X_H_g = snapobj.data["GFM_Metals"][:,0]
-        # xe_g = snapobj.data["ElectronAbundance"]
+        xe_g = snapobj.data["ElectronAbundance"]
         rho_g = snapobj.data["Density"] << (1e10 / h * U.Msun * np.power(a / h * U.Mpc, -3))
         u_g = snapobj.data["InternalEnergy"] << (U.km/U.s)**2
+        mu_g = 4 / (1 + 3 * X_H_g + 4 * X_H_g * xe_g) << C.m_p
         m_g = snapobj.data["Masses"] << (1e10 / h * U.Msun)
         # cast to float64 to avoid underflow error
         nH_g = rho_g * X_H_g / C.m_p << U.cm**-3
@@ -240,9 +241,8 @@ class AurigaSource(SPHSource):
             fatomic_g = 1. / (1. +
                 (1. / (1.7e4 << U.K/U.cm**3) * P_g) ** 0.8
             )
+            T_g = (gamma - 1.) / C.k_B * u_g * mu_g << U.K
             del P_g, rho_g, u_g
-            # T_g = (gamma - 1.) / C.k_B * u_g * mu_g << U.K
-            T_g = 1e3 << U.K
             # T_g is only used for velocity dispersion later
         mHI_g = m_g * X_H_g * fatomic_g * fneutral_g << U.Msun
         del m_g, X_H_g, fatomic_g, fneutral_g
