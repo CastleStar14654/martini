@@ -334,7 +334,7 @@ class _BaseMartini:
         from tqdm.autonotebook import tqdm
 
         if ncpu == 1:
-            self._datacube._array = U.Quantity(
+            self._datacube._array += U.Quantity(
                 [
                     self._evaluate_pixel_spectrum(ij_px)
                     for ij_px in tqdm(ij_pxs, disable=not progressbar)
@@ -347,7 +347,7 @@ class _BaseMartini:
 
             total = len(ij_pxs)
             with ThreadPool(processes=ncpu) as pool:
-                self._datacube._array = U.Quantity(
+                self._datacube._array += U.Quantity(
                     list(
                         tqdm(
                             pool.imap(
