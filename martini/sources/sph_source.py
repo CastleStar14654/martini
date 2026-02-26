@@ -443,7 +443,7 @@ class SPHSource(object):
         rotation: Rotation | None = None,
         *,
         L_coords: L_coords | None = None,
-    ) -> None:
+    ) -> Rotation:
         """
         Rotate the source.
 
@@ -468,6 +468,12 @@ class SPHSource(object):
             inclined (rotation about 'y'). By default the position angle on the
             sky is 270 degrees, but if a third element is provided it sets the
             position angle (second rotation about 'x').
+
+        Returns
+        -------
+        ~scipy.spatial.transform.Rotation
+            A :class:`~scipy.spatial.transform.Rotation` specifying the actual rotation
+            done in this function call.
         """
         args_given = (rotation is not None, L_coords is not None)
         if np.sum(args_given) == 0:
@@ -516,7 +522,7 @@ class SPHSource(object):
         self._append_to_coordinate_affine_transform(affine_transform)
         self._append_to_velocity_affine_transform(affine_transform)
         self.coordinates_g = self.coordinates_g.transform(do_rot)
-        return
+        return Rotation.from_matrix(do_rot)
 
     def translate(self, translation_vector: U.Quantity[U.kpc]) -> None:
         """
@@ -628,7 +634,7 @@ class SPHSource(object):
            R_{20} & R_{21} & R_{22} & t_{2} \\
            0 & 0 & 0 & 1 \\
            \end{array} } \right]
-   
+
         Where :math:`R` is a rotation matrix and :math:`t` is a translation vector (either
         in position or velocity). The affine transformation applied to a vector :math:`x`
         is equivalent to :math:`Rx+t`. The saved file contains two affine transformation
