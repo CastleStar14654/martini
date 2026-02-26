@@ -192,7 +192,7 @@ class _BaseMartini:
         if not self.quiet:
             print(
                 f"Source module contained {self.source.npart} particles with total HI"
-                f" mass of {self.source.mHI_g.sum():.2e}."
+                f" mass of {self.source.mHI_g.sum() << U.Msun:.2e}."
             )
         spectrum_half_width = self.spectral_model.half_width(self.source) / np.max(
             np.abs(np.diff(self._datacube.velocity_channel_edges))
@@ -235,7 +235,7 @@ class _BaseMartini:
             print(
                 f"Pruned particles that will not contribute to {obj_type_str}, "
                 f"{self.source.npart} particles remaining with total HI mass of "
-                f"{self.source.mHI_g.sum():.2e}."
+                f"{self.source.mHI_g.sum() << U.Msun:.2e}."
             )
         return
 
@@ -396,7 +396,7 @@ class _BaseMartini:
                 f"  Mass in cube (assuming distance {self.source.distance:.2f} and a"
                 f" spatially resolved source):"
                 f" {inserted_mass:.2e}",
-                f"    [{inserted_mass / self.source.input_mass * 100:.0f}%"
+                f"    [{inserted_mass / self.source.input_mass * 100 << 1:.0f}%"
                 f" of initial source mass]",
                 f"  Maximum pixel: {self._datacube._array.max():.2e}",
                 "  Median non-zero pixel:"
