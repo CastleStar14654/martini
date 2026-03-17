@@ -1076,7 +1076,7 @@ class Martini(_BaseMartini):
         # flip axes to write
         data = self._datacube._array.to_value(datacube_array_units).T
         if dtype is not None:
-            data = data.astype(dtype)
+            data = data.astype(dtype, copy=False)
         hdu = fits.PrimaryHDU(header=header, data=data)
         hdu.writeto(filename, overwrite=overwrite)
 
