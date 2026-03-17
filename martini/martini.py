@@ -1004,8 +1004,8 @@ class Martini(_BaseMartini):
             )
         self._datacube.drop_pad()
 
-        if 'fits' not in str(filename).split('.'):
-            filename = str(filename) + ".fits"
+        filename = str(filename)
+        filename = filename + ".fits" if "fits" not in filename.split(".") else filename
 
         wcs_header = self._datacube.wcs.to_header()
         wcs_header.rename_keyword("WCSAXES", "NAXIS")
