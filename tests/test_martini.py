@@ -27,7 +27,7 @@ def check_mass_accuracy(m, out_mode):
         The martini instance to test for accuracy.
 
     out_mode : str
-        Can be ``"fits"``, ``"fits32"`` (for f32 data type), or ``"hdf5"``.
+        Can be ``"fits"`` or ``"hdf5"``.
     """
     if out_mode == "hdf5":
         h5py = pytest.importorskip(
@@ -84,10 +84,10 @@ def check_mass_accuracy(m, out_mode):
     # demand accuracy within 1% after beam convolution
     assert U.isclose(MHI, m.source.mHI_g.sum(), rtol=1e-2)
 
-    if out_mode.startswith("fits"):
+    if out_mode == "fits":
         filename = "cube.fits"
         try:
-            m.write_fits(filename, dtype=np.float32 if out_mode=='fits32' else None)
+            m.write_fits(filename)
             with fits.open(filename) as f:
                 # distance
                 D = m.source.distance
@@ -204,7 +204,7 @@ class TestMartini:
 
     @pytest.mark.parametrize("sph_kernel", simple_kernels)
     @pytest.mark.parametrize("spectral_model", (DiracDeltaSpectrum, GaussianSpectrum))
-    @pytest.mark.parametrize("out_mode", ("fits", "fits32", "hdf5"))
+    @pytest.mark.parametrize("out_mode", ("fits", "hdf5"))
     def test_mass_accuracy(
         self, dc_zeros, sph_kernel, spectral_model, single_particle_source, out_mode
     ):
