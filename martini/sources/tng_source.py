@@ -195,7 +195,6 @@ class TNGSource(SPHSource):
     ) -> None:
         # optional dependencies for this source class
         import h5py
-        from Hdecompose.atomic_frac import atomic_frac
 
         X_H = 0.76
 
@@ -204,6 +203,8 @@ class TNGSource(SPHSource):
             "Velocities",
             "InternalEnergy",
             "ElectronAbundance",
+            "NeutralHydrogenAbundance",
+            "StarFormationRate",
             "Density",
             "CenterOfMass",
             "GFM_Metals",
@@ -214,6 +215,8 @@ class TNGSource(SPHSource):
             "Velocities",
             "InternalEnergy",
             "ElectronAbundance",
+            "NeutralHydrogenAbundance",
+            "StarFormationRate",
             "Density",
             "Coordinates",
         ]
@@ -358,50 +361,60 @@ class TNGSource(SPHSource):
         z = data_header["Redshift"]
         h = data_header["HubbleParam"]
         xe_g = data_g["ElectronAbundance"]
-        rho_g = data_g["Density"] * 1e10 / h * U.Msun * np.power(a / h * U.kpc, -3)
-        u_g = data_g["InternalEnergy"]  # unit conversion handled in T_g
+        rho_g = data_g["Density"] << 1e10 / h * U.Msun * np.power(a / h * U.kpc, -3)
+        u_g = data_g["InternalEnergy"] << (U.km/U.s)**2
         mu_g = 4 / (1 + 3 * X_H_g + 4 * X_H_g * xe_g)
         gamma = 5.0 / 3.0  # see http://www.tng-project.org/data/docs/faq/#gen4
-        T_g = (
-            (gamma - 1)
-            * u_g
-            / C.k_B.to_value(U.erg / U.K)
-            * 1e10
-            * mu_g
-            * C.m_p.to_value(U.g)
-            * U.K
+        T_g = (gamma - 1) / C.k_B * (u_g * mu_g * C.m_p) << U.K
+        m_g = data_g["Masses"] << 1e10 / h * U.Msun
+        nH_g = rho_g * X_H_g / C.m_p << U.cm**-3
+        fneutral_g = data_g["NeutralHydrogenAbundance"].copy()
+        gamma = 5.0 / 3.0
+        # cold
+        mu_c = 4 / (1 + 3 * X_H_g) << C.m_p
+        u_c = C.k_B * (1e3 << U.K) / (mu_c * (gamma - 1.)) << (U.km / U.s)**2
+        del mu_c
+        # hot
+        mu_h = 4 / (3 + 5 * X_H_g) << C.m_p  # He fully ionized
+        T_h = (
+            1e3
+            + 5.73e7
+            / (1 + 573 * np.maximum(1.0, nH_g.to_value(U.cm**-3) / 0.13) ** -0.8)
+        ) << U.K  # Springel & Hernquist 03; Stevens 19
+        u_h = C.k_B * T_h / (mu_h * (gamma - 1.)) << (U.km/U.s)**2
+        del mu_h
+        sfr_g = data_g["StarFormationRate"] << U.Msun / U.yr
+        possfr_mask = sfr_g > 0
+        u_h_pos = u_h[possfr_mask]
+        fneutral_g[possfr_mask] = (
+            1.0 / (u_h_pos - u_c[possfr_mask]) * (u_h_pos - u_g[possfr_mask])
+        ).to_value(U.dimensionless_unscaled)
+        del u_h_pos, sfr_g, possfr_mask, u_c, u_h
+
+        # partial pressure is used; see Marinacci 17 & Diemer 18 eq. 6
+        P_g = (gamma - 1.) / C.k_B * u_g * fneutral_g * rho_g << U.K / U.cm**3
+        fatomic_g = 1. / (1. +
+            (1. / (1.7e4 << U.K / U.cm**3) * P_g) ** 0.8 # Leroy 08
+            # (1. / (4.3e4 << U.K / U.cm**3) * P_g) ** 0.92 # Blitz & Rosolowsky 06
         )
-        m_g = data_g["Masses"] * 1e10 / h * U.Msun
-        # cast to float64 to avoid underflow error
-        nH_g = U.Quantity(rho_g * X_H_g / mu_g, dtype=np.float64) / C.m_p
-        # In TNG_corrections I set f_neutral = 1 for particles with density
-        # > .1cm^-3. Might be possible to do a bit better here, but HI & H2
-        # tables for TNG will be available soon anyway.
-        fatomic_g = atomic_frac(
-            z,
-            nH_g,
-            T_g,
-            rho_g,
-            X_H_g,
-            mu=mu_g,
-            onlyA1=True,
-            TNG_corrections=True,
-        )
-        mHI_g = m_g * X_H_g * fatomic_g
+        del P_g, rho_g, u_g
+
+        mHI_g = m_g * X_H_g * fatomic_g * fneutral_g << U.Msun
+        del m_g, X_H_g, fatomic_g, fneutral_g
         try:
-            xyz_g = data_g["CenterOfMass"] * a / h * U.kpc
+            xyz_g = data_g["CenterOfMass"] * (a / h) << U.kpc
         except KeyError:
-            xyz_g = data_g["Coordinates"] * a / h * U.kpc
-        vxyz_g = data_g["Velocities"] * np.sqrt(a) * U.km / U.s
+            xyz_g = data_g["Coordinates"] * (a / h) << U.kpc
+        vxyz_g = data_g["Velocities"] * np.sqrt(a) << U.km / U.s
         V_cell = (
             data_g["Masses"] / data_g["Density"] * np.power(a / h * U.kpc, 3)
         )  # Voronoi cell volume
         r_cell = np.power(3.0 * V_cell / 4.0 / np.pi, 1.0 / 3.0).to(U.kpc)
         # hsm_g has in mind a cubic spline that =0 at r=h, I think
         hsm_g = 2.5 * r_cell * find_fwhm(_CubicSplineKernel().kernel)
-        xyz_centre = data_sub["SubhaloPos"] * a / h * U.kpc
+        xyz_centre = data_sub["SubhaloPos"] * (a / h) << U.kpc
         xyz_g -= xyz_centre
-        vxyz_centre = data_sub["SubhaloVel"] * np.sqrt(a) * U.km / U.s
+        vxyz_centre = data_sub["SubhaloVel"] * np.sqrt(a) << U.km / U.s
         vxyz_g -= vxyz_centre
 
         super().__init__(
